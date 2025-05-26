@@ -37,7 +37,7 @@ class EfficientSRCNN(nn.Module):
 # ----------------------------
 
 model = EfficientSRCNN().to(device)
-checkpoint = torch.load("models/model_x4.pth", map_location=device)
+checkpoint = torch.load("models/model_x2.pth", map_location=device)
 model.load_state_dict(checkpoint['model_state_dict'])
 model.eval()
 print(f"Model încărcat (epoca {checkpoint['epoch']}, loss: {checkpoint['loss']:.6f})")

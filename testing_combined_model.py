@@ -13,7 +13,7 @@ paths = [
 ]
 
 model = CombinedTrainableSRModel(paths).to(device)
-model.load_state_dict(torch.load("models/combined_model_trained.pth", map_location=device))  # optional, dacă ai salvat stratul combinator
+model.load_state_dict(torch.load("models/combined_model_trained.pth", map_location=device))
 model.eval()
 
 # --------------------------------------------------

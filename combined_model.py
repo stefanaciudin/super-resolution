@@ -31,7 +31,7 @@ class CombinedTrainableSRModel(nn.Module):
             model.eval()
             self.models.append(model)
 
-        # stratul combinator învățabil
+        # combiner layer
         self.combiner = nn.Conv2d(3 * len(self.models), 3, kernel_size=1)
 
     def forward(self, x):
