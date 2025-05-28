@@ -1,6 +1,9 @@
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from matplotlib import pyplot as plt
 from torchvision.transforms import functional as TF
 import random
 from utils import load_image, downsample, psnr, show_images
@@ -14,10 +17,10 @@ scale = 2
 # ----------------------------
 # 1. AUGMENTARE + PATCH-URI
 # ----------------------------
+
 def extract_augmented_patches(img, patch_height, stride=32):
-    # Calculate patch width to maintain 4:3 ratio
     patch_width = int(patch_height * 4 / 3)
-    patch_width = patch_width - (patch_width % 2)  # Make sure width is even
+    patch_width = patch_width - (patch_width % 2)
 
     b, c, h, w = img.shape
     patches = img.unfold(2, patch_height, stride).unfold(3, patch_width, stride)
@@ -25,16 +28,39 @@ def extract_augmented_patches(img, patch_height, stride=32):
 
     aug_patches = []
     for p in patches:
-        if random.random() < 0.5:
+        if random.random() < 0.2:
             p = TF.hflip(p)
-        if random.random() < 0.5:
+        if random.random() < 0.3:
             p = TF.vflip(p)
         if random.random() < 0.5:
             angle = random.choice([90, 180, 270])
-            p = TF.rotate(p, angle)  # When rotating 90/270 degrees, the aspect ratio will change
+            p = TF.rotate(p, angle)
         aug_patches.append(p)
 
     return torch.stack(aug_patches)
+
+
+def visualize_patches(patches, num_patches=10, title="Visualizing Patches"):
+    # Select random patches based on `num_patches`
+    indices = torch.randperm(patches.size(0))[:num_patches]
+    selected_patches = patches[indices]
+
+    # Set up the grid for visualization
+    cols = int(torch.sqrt(torch.tensor(num_patches)).item())
+    rows = math.ceil(num_patches / cols)  # Use Python's math.ceil()
+
+    plt.figure(figsize=(cols * 3, rows * 3))
+    plt.suptitle(title, fontsize=16)
+
+    for i, patch in enumerate(selected_patches):
+        patch = patch.permute(1, 2, 0).cpu().numpy()  # Convert to HWC format
+        plt.subplot(rows, cols, i + 1)
+        plt.imshow(patch)
+        plt.axis("off")
+
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
+    plt.show()
+
 
 # ----------------------------
 # 2. MODEL
@@ -81,6 +107,8 @@ val_img = load_image("data/validation.jpg")
 patch_size = 128
 patches = extract_augmented_patches(train_img, patch_size, stride=32)
 print(f"Patch-uri extrase și augmentate: {patches.shape[0]}")
+# Visualize the first 16 patches from the extracted patches
+visualize_patches(patches, num_patches=16, title="Augmented Patches")
 
 # ----------------------------
 # 4. ANTRENARE
@@ -124,6 +152,7 @@ for phase, config in enumerate(training_phases):
 
             optimizer.zero_grad()
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.1)
             optimizer.step()
 
             total_loss += loss.item()
@@ -152,12 +181,26 @@ print(f"\nModel salvat în: {model_path}")
 # ----------------------------
 scales = [2, 4, 8, 16, 32]
 
-print("\nRezultate validare pe diferite scale:")
+print("\nVALIDARE CU MODEL X2 APLICAT RECURSIV:\n")
 model.eval()
 for s in scales:
-    val_down, val_up = downsample(val_img, s)
+    # 1. Downsample originalul la rezoluție joasă (simulate input)
+    val_down, _ = downsample(val_img, s)  # e.g., la 1/8 din dimensiune
+
+    # 2. Upsample treptat cu bicubic + model x2
+    inp = val_down.to(device)
+    steps = int(torch.log2(torch.tensor(s)).item())  # câte ori aplicăm x2
+
     with torch.no_grad():
-        val_output = model(val_up)
-        val_psnr = psnr(val_output, val_img)
-        print(f"Downsampled by {s}x -> PSNR: {val_psnr:.2f} dB")
-        show_images(val_img, val_output, f"Reconstruit x{s}")
+        for _ in range(steps):
+            # Bicubic la dimensiunea dublă
+            _, _, h, w = inp.shape
+            inp = F.interpolate(inp, scale_factor=2, mode='bicubic', align_corners=False)
+            # Trecem prin modelul nostru x2
+            inp = model(inp)
+
+    # 3. Clamp și comparăm cu originalul la rezoluția full
+    val_output = inp.clamp(0, 1)
+    val_psnr = psnr(val_output, val_img)
+    print(f"Downsampled by {s}x -> PSNR: {val_psnr:.2f} dB")
+    show_images(val_img, val_output, f"Reconstruit x{s}")

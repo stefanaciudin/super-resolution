@@ -5,15 +5,16 @@ from PIL import Image
 import matplotlib.pyplot as plt
 import torch.nn.functional as F
 import numpy as np
-from math import log10
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def psnr(pred, target):
-    mse = F.mse_loss(pred, target)
+
+def psnr(original, compared, PIXEL_MAX=1.0):  # Changed to 1.0 since tensors are normalized
+    compared = compared.to(original.device)
+    mse = torch.mean((original - compared) ** 2)
     if mse == 0:
         return float('inf')
-    return 10 * log10(1 / mse.item())
+    return 20 * torch.log10(torch.tensor(PIXEL_MAX)) - 10 * torch.log10(mse)
 
 def load_image(path, resize_to=None):
     image = Image.open(path).convert("RGB")
