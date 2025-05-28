@@ -9,7 +9,7 @@ import numpy as np
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def psnr(original, compared, PIXEL_MAX=1.0):  # Changed to 1.0 since tensors are normalized
+def psnr(original, compared, PIXEL_MAX=1.0):
     compared = compared.to(original.device)
     mse = torch.mean((original - compared) ** 2)
     if mse == 0:

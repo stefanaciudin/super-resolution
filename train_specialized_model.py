@@ -19,48 +19,54 @@ scale = 2
 # ----------------------------
 
 def extract_augmented_patches(img, patch_height, stride=32):
+    if img.dim() == 3:
+        img = img.unsqueeze(0)
+
     patch_width = int(patch_height * 4 / 3)
     patch_width = patch_width - (patch_width % 2)
-
     b, c, h, w = img.shape
-    patches = img.unfold(2, patch_height, stride).unfold(3, patch_width, stride)
-    patches = patches.contiguous().view(-1, c, patch_height, patch_width)
 
-    aug_patches = []
-    for p in patches:
-        if random.random() < 0.2:
-            p = TF.hflip(p)
-        if random.random() < 0.3:
-            p = TF.vflip(p)
-        if random.random() < 0.5:
-            angle = random.choice([90, 180, 270])
-            p = TF.rotate(p, angle)
-        aug_patches.append(p)
+    patches = []
+    for i in range(0, h - patch_height + 1, stride):
+        for j in range(0, w - patch_width + 1, stride):
+            patch = img[0, :, i:i + patch_height, j:j + patch_width]
 
-    return torch.stack(aug_patches)
+            if random.random() < 0.2:
+                patch = TF.hflip(patch)
+            if random.random() < 0.3:
+                patch = TF.vflip(patch)
+            if random.random() < 0.5:
+                patch = TF.rotate(patch, 180)
+
+            patches.append(patch)
+
+    return torch.stack(patches) if patches else torch.empty(0, c, patch_height, patch_width)
+
 
 
 def visualize_patches(patches, num_patches=10, title="Visualizing Patches"):
-    # Select random patches based on `num_patches`
+    if patches.size(0) == 0:
+        return
+
     indices = torch.randperm(patches.size(0))[:num_patches]
     selected_patches = patches[indices]
 
-    # Set up the grid for visualization
-    cols = int(torch.sqrt(torch.tensor(num_patches)).item())
-    rows = math.ceil(num_patches / cols)  # Use Python's math.ceil()
+    cols = int(torch.sqrt(torch.tensor(num_patches, dtype=torch.float)).item())
+    rows = math.ceil(num_patches / cols)
 
     plt.figure(figsize=(cols * 3, rows * 3))
     plt.suptitle(title, fontsize=16)
 
     for i, patch in enumerate(selected_patches):
-        patch = patch.permute(1, 2, 0).cpu().numpy()  # Convert to HWC format
+        patch_np = patch.permute(1, 2, 0).cpu().numpy()
+        patch_np = torch.clamp(torch.from_numpy(patch_np), 0, 1).numpy()
+
         plt.subplot(rows, cols, i + 1)
-        plt.imshow(patch)
+        plt.imshow(patch_np)
         plt.axis("off")
 
     plt.tight_layout(rect=[0, 0, 1, 0.95])
     plt.show()
-
 
 # ----------------------------
 # 2. MODEL
