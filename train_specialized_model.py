@@ -18,29 +18,30 @@ scale = 2
 # 1. AUGMENTARE + PATCH-URI
 # ----------------------------
 
-def extract_augmented_patches(img, patch_height, stride=32):
+def extract_augmented_patches(img, patch_size, stride=32):
     if img.dim() == 3:
         img = img.unsqueeze(0)
 
-    patch_width = int(patch_height * 4 / 3)
-    patch_width = patch_width - (patch_width % 2)
     b, c, h, w = img.shape
-
     patches = []
-    for i in range(0, h - patch_height + 1, stride):
-        for j in range(0, w - patch_width + 1, stride):
-            patch = img[0, :, i:i + patch_height, j:j + patch_width]
 
-            if random.random() < 0.2:
-                patch = TF.hflip(patch)
-            if random.random() < 0.3:
-                patch = TF.vflip(patch)
+    for i in range(0, h - patch_size + 1, stride):
+        for j in range(0, w - patch_size + 1, stride):
+            patch = img[0, :, i:i + patch_size, j:j + patch_size]
+
             if random.random() < 0.5:
-                patch = TF.rotate(patch, 180)
+                patch = TF.hflip(patch)
+            if random.random() < 0.5:
+                patch = TF.vflip(patch)
+
+            # Apply a random rotation from [0, 90, 180, 270]
+            angle = random.choice([0, 90, 180, 270])
+            if angle != 0:
+                patch = TF.rotate(patch, angle)
 
             patches.append(patch)
 
-    return torch.stack(patches) if patches else torch.empty(0, c, patch_height, patch_width)
+    return torch.stack(patches) if patches else torch.empty(0, c, patch_size, patch_size)
 
 
 
@@ -94,6 +95,18 @@ class EfficientSRCNN(nn.Module):
 model = EfficientSRCNN().to(device)
 print("Număr total parametri:", sum(p.numel() for p in model.parameters()))
 
+class PSNRLoss(nn.Module):
+    def __init__(self, max_pixel_value=1.0, epsilon=1e-8):
+        super(PSNRLoss, self).__init__()
+        self.max_pixel_value = max_pixel_value
+        self.epsilon = epsilon
+
+    def forward(self, pred, target):
+        mse = F.mse_loss(pred, target, reduction='mean')
+        psnr = 10 * torch.log10((self.max_pixel_value ** 2) / (mse + self.epsilon))
+        return -psnr  # because we want to minimize the loss
+
+
 class CharbonnierLoss(nn.Module):
     def __init__(self, epsilon=1e-6):
         super(CharbonnierLoss, self).__init__()
@@ -102,7 +115,7 @@ class CharbonnierLoss(nn.Module):
     def forward(self, pred, target):
         return torch.mean(torch.sqrt((pred - target) ** 2 + self.epsilon ** 2))
 
-criterion = CharbonnierLoss()
+criterion = PSNRLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 # 30-50 1e-3
 # 30-50 1e-4
@@ -123,7 +136,7 @@ batch_size = 32
 training_phases = [
     {'lr': 1e-3, 'epochs': 50},
     {'lr': 1e-4, 'epochs': 40},
-    {'lr': 1e-5, 'epochs': 30}
+    {'lr': 1e-5, 'epochs': 30},
 ]
 
 total_epochs = sum(phase['epochs'] for phase in training_phases)
